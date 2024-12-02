@@ -1,47 +1,65 @@
-// Import the required modules
-const express = require("express"); // Import the Express framework
-const app = express(); // Create an instance of the Express app
-const PORT = 5000; // Define the port the server will run on
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args)); // Import fetch for making HTTP requests
+const express = require("express");
+const app = express();
+const PORT = 5000;
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
-// Define the Weather API key (keep this private in production)
 const WEATHER_API_KEY = "1c2d28b2e6694a8db9c85252242811";
 
-// Middleware to handle CORS (Cross-Origin Resource Sharing) issues
 const cors = require("cors");
-app.use(cors()); // Allow all origins for now (you can restrict this later)
+app.use(cors());
 
-// Define a route to get weather data
 app.get("/api/weather", async (req, res) => {
-    const city = req.query.city; // Extract the city from the query parameters
+    const city = req.query.city;
 
-    // Validate if the city name was provided in the request
     if (!city) {
-        return res.status(400).json({ error: "City name is required" }); // Return an error if the city is not provided
+        return res.status(400).json({ error: "City name is required" });
     }
 
     try {
-        // Build the Weather API URL with the provided city and the API key
-        const weatherApiUrl = `http://api.weatherapi.com/v1/current.json?key=${WEATHER_API_KEY}&q=${city}`;
-        console.log(weatherApiUrl); // Log the URL for debugging purposes
+        const results = [];
+        const now = new Date();
 
-        // Fetch weather data from the Weather API
-        const response = await fetch(weatherApiUrl);
-        const data = await response.json(); // Parse the JSON response
+        // Round current time to the nearest hour in UTC (to handle time zone discrepancies)
+        now.setUTCMinutes(0, 0, 0);
 
-        // Check if the response is successful (status 200)
-        if (response.ok) {
-            res.json(data); // Send the weather data back to the frontend
-        } else {
-            res.status(404).json({ error: data.error.message }); // Send an error message if the city was not found
+        // Generate 5 hours: 2 hours back, current hour, and 2 hours ahead
+        const hours = [
+            new Date(now.getTime() - 2 * 60 * 60 * 1000), // 2 hours back
+            new Date(now.getTime() - 1 * 60 * 60 * 1000), // 1 hour back
+            new Date(now), // Current hour
+            new Date(now.getTime() + 1 * 60 * 60 * 1000), // 1 hour ahead
+            new Date(now.getTime() + 2 * 60 * 60 * 1000), // 2 hours ahead
+        ];
+
+        // Loop through each hour and fetch data
+        for (const hour of hours) {
+            const formattedHour = hour.getUTCHours().toString().padStart(2, '0'); // Format the hour in UTC
+
+            console.log(`Fetching weather for hour: ${formattedHour}`);
+            
+            const weatherApiUrl = `http://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${city}&hour=${formattedHour}`;
+            console.log(`URL for weather data: ${weatherApiUrl}`);
+
+            const response = await fetch(weatherApiUrl);
+            const data = await response.json();
+
+            if (response.ok) {
+                console.log(`Weather data for ${formattedHour}:`, data);
+                results.push({ hour: formattedHour, data });
+            } else {
+                console.log(`Error fetching data for hour ${formattedHour}:`, data.error.message);
+                results.push({ hour: formattedHour, error: data.error.message });
+            }
         }
+
+        res.json(results);
+
     } catch (err) {
-        console.error(err); // Log any errors that occur
-        res.status(500).json({ error: "Server error" }); // Send a generic server error message
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
     }
 });
 
-// Start the server and listen on the specified port
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`); // Log the server is running
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
